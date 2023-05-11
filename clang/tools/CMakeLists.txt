@@ -37,6 +37,8 @@ if(CLANG_ENABLE_STATIC_ANALYZER)
   add_clang_subdirectory(scan-build)
   add_clang_subdirectory(scan-build-py)
   add_clang_subdirectory(scan-view)
+  # Here we add our own aterms-dumper
+  add_clang_subdirectory(aterms-dumper)
 endif()
 
 # We support checking out the clang-tools-extra repository into the 'extra'
