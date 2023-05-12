@@ -5,6 +5,11 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/Format.h"
 
+/* TODO: extract Type Info as types in ATerms
+   TODO: transform some structures into sequences. For instnace, ReturnStmt
+    contains a sequence of statements.
+*/
+
 using namespace clang;
 
 class ATermsVisitor : public RecursiveASTVisitor<ATermsVisitor> {
