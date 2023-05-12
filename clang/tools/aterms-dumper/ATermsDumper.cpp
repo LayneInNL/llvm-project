@@ -136,11 +136,36 @@ public:
   CreateASTConsumer(clang::CompilerInstance &Compiler, llvm::StringRef InFile) {
     return std::make_unique<ATermsConsumer>(&Compiler.getASTContext());
   }
+
+  virtual bool BeginInvocation(clang::CompilerInstance &CI) {
+    clang::LangOptions &LO = CI.getLangOpts();
+    LO.CPlusPlus = 1;
+    LO.CPlusPlus17 = 1;
+    clang::HeaderSearchOptions &HSO = CI.getHeaderSearchOpts();
+    HSO.AddPath("/Users/layneliu/Projects/llvm-project/build/include/c++/v1",
+                clang::frontend::IncludeDirGroup::CXXSystem, false, false);
+    HSO.AddSystemHeaderPrefix("/usr/local/include", true);
+    HSO.AddSystemHeaderPrefix(
+        "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/include",
+        true);
+    HSO.AddSystemHeaderPrefix(
+        "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/"
+        "include",
+        true);
+    for (auto one : CI.getHeaderSearchOpts().SystemHeaderPrefixes) {
+      llvm::outs() << one.Prefix;
+    }
+    HSO.ResourceDir =
+        "/Users/layneliu/Projects/llvm-project/build/lib/clang/16";
+    return true;
+  }
 };
 
 int main(int argc, char **argv) {
-  clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
-                                "int swap(int a, int b) { return 42; }");
+  // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
+  //                               "int swap(int a, int b) { return 42; }");
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(), "namespace
   // n {namespace m {class C{};}}");
+  clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
+                                "#include <string>");
 }
