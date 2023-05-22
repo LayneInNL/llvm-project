@@ -102,6 +102,18 @@ public:
     //   TraverseDecl(*begin);
     // }
     // llvm::outs() << "])";
+    clang::SourceRange SR = Decl->getSourceRange();
+    bool x = false;
+    llvm::outs()
+        << "###"
+        << Context->getSourceManager().getCharacterData(SR.getBegin(), &x)
+        << "###"
+        << Context->getSourceManager().isMacroBodyExpansion(SR.getBegin())
+        << Context->getSourceManager().isMacroArgExpansion(SR.getBegin());
+    clang::SourceLocation SL = Decl->getLocation();
+    clang::SourceLocation ISL =
+        Context->getSourceManager().getImmediateSpellingLoc(SL);
+    llvm::outs() << Context->getSourceManager().getCharacterData(ISL);
     return true;
   }
 
@@ -121,9 +133,30 @@ public:
   virtual void HandleTranslationUnit(clang::ASTContext &Context) {
     // Visitor.TraverseDecl(Context.getTranslationUnitDecl());
     Visitor.TraverseAST(Context);
-
-    // Visitor.VisitTranslationUnitDecl(Context.getTranslationUnitDecl());
     llvm::outs() << "\n";
+    clang::SourceManager &SM = Context.getSourceManager();
+    // Visitor.VisitTranslationUnitDecl(Context.getTranslationUnitDecl());
+    for (auto begin = SM.fileinfo_begin(); begin != SM.fileinfo_end();
+         begin++) {
+      llvm::outs() << "filename: " << begin->first->getName() << "\n";
+      llvm::outs() << "isMainFile: " << SM.isMainFile(*(begin->first)) << "\n";
+      clang::FileID FID = SM.translateFile(begin->first);
+      clang::SourceLocation StartSL = SM.getLocForStartOfFile(FID);
+      llvm::outs() << "loaction: " << StartSL.printToString(SM) << "\n";
+      clang::SourceLocation EndSL = SM.getLocForEndOfFile(FID);
+      // for (; StartSL != EndSL;) {
+      bool Invalid;
+      auto s = SM.getCharacterData(StartSL, &Invalid);
+      llvm::outs() << "default: " << s;
+      clang::SourceLocation SpellingSL = SM.getSpellingLoc(StartSL);
+      s = SM.getCharacterData(SpellingSL, &Invalid);
+      llvm::outs() << "spelling: " << s;
+      clang::SourceLocation ExpantionSL = SM.getExpansionLoc(StartSL);
+      s = SM.getCharacterData(ExpantionSL, &Invalid);
+      llvm::outs() << "expansion: " << s;
+      // StartSL = StartSL + 1;
+      // }
+    }
   }
 
 private:
@@ -144,14 +177,16 @@ public:
     clang::HeaderSearchOptions &HSO = CI.getHeaderSearchOpts();
     HSO.AddPath("/Users/layneliu/Projects/llvm-project/build/include/c++/v1",
                 clang::frontend::IncludeDirGroup::CXXSystem, false, false);
-    HSO.AddSystemHeaderPrefix("/usr/local/include", true);
-    HSO.AddSystemHeaderPrefix(
-        "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/include",
-        true);
-    HSO.AddSystemHeaderPrefix(
-        "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/"
-        "include",
-        true);
+    HSO.AddPath("/Users/layneliu/Projects/macros",
+                clang::frontend::IncludeDirGroup::Quoted, false, false);
+    // HSO.AddSystemHeaderPrefix("/usr/local/include", true);
+    // HSO.AddSystemHeaderPrefix(
+    //     "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/include",
+    //     true);
+    // HSO.AddSystemHeaderPrefix(
+    //     "/Users/layneliu/Projects/llvm-project/build/lib/clang/16/"
+    //     "include",
+    //     true);
     for (auto one : CI.getHeaderSearchOpts().SystemHeaderPrefixes) {
       llvm::outs() << one.Prefix;
     }
@@ -167,5 +202,5 @@ int main(int argc, char **argv) {
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(), "namespace
   // n {namespace m {class C{};}}");
   clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
-                                "#include <string>");
+                                "#include \"swapsig.h\"\n", "swapsig.cpp");
 }
