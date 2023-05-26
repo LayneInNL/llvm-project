@@ -2,6 +2,7 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Lex/PPCallbacks.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/Format.h"
 
@@ -11,6 +12,36 @@
 */
 
 using namespace clang;
+
+class IncludesExtractor : public clang::PPCallbacks {
+public:
+  void InclusionDirective(clang::SourceLocation HashLoc,
+                          const clang::Token &IncludeTok,
+                          clang::StringRef FileName, bool IsAngled,
+                          clang::CharSourceRange FilenameRange,
+                          clang::OptionalFileEntryRef File,
+                          clang::StringRef SearchPath,
+                          clang::StringRef RelativePath,
+                          const clang::Module *Imported,
+                          clang::SrcMgr::CharacteristicKind FileType) override;
+  IncludesExtractor(clang::SourceManager &SM) : SM(SM) {}
+
+private:
+  clang::SourceManager &SM;
+};
+
+void IncludesExtractor::InclusionDirective(
+    clang::SourceLocation HashLoc, const clang::Token &IncludeTok,
+    clang::StringRef FileName, bool IsAngled,
+    clang::CharSourceRange FilenameRange, clang::OptionalFileEntryRef File,
+    clang::StringRef SearchPath, clang::StringRef RelativePath,
+    const clang::Module *Imported, clang::SrcMgr::CharacteristicKind FileType) {
+  llvm::outs() << FileName << "\n";
+  clang::FullSourceLoc FSL = clang::FullSourceLoc(HashLoc, SM);
+  llvm::outs() << IncludeTok.getName() << "\n";
+  llvm::outs() << IsAngled << FilenameRange.getAsRange().printToString(SM)
+               << "\n";
+}
 
 class ATermsVisitor : public RecursiveASTVisitor<ATermsVisitor> {
 public:
@@ -102,23 +133,32 @@ public:
     //   TraverseDecl(*begin);
     // }
     // llvm::outs() << "])";
-    clang::SourceRange SR = Decl->getSourceRange();
-    bool x = false;
-    llvm::outs()
-        << "###"
-        << Context->getSourceManager().getCharacterData(SR.getBegin(), &x)
-        << "###"
-        << Context->getSourceManager().isMacroBodyExpansion(SR.getBegin())
-        << Context->getSourceManager().isMacroArgExpansion(SR.getBegin());
-    clang::SourceLocation SL = Decl->getLocation();
-    clang::SourceLocation ISL =
-        Context->getSourceManager().getImmediateSpellingLoc(SL);
-    llvm::outs() << Context->getSourceManager().getCharacterData(ISL);
+    // clang::SourceRange SR = Decl->getSourceRange();
+    // bool x = false;
+    // llvm::outs()
+    //     << "###"
+    //     << Context->getSourceManager().getCharacterData(SR.getBegin(), &x)
+    //     << "###"
+    //     << Context->getSourceManager().isMacroBodyExpansion(SR.getBegin())
+    //     << Context->getSourceManager().isMacroArgExpansion(SR.getBegin());
+    // clang::SourceLocation SL = Decl->getLocation();
+    // clang::SourceLocation ISL =
+    //     Context->getSourceManager().getImmediateSpellingLoc(SL);
+    // llvm::outs() << Context->getSourceManager().getCharacterData(ISL);
     return true;
   }
 
   bool VisitParmVarDecl(ParmVarDecl *Decl) {
     llvm::outs() << "ParmVarDecl(\"" << Decl->getName() << "\", Int())";
+    clang::SourceRange SR = Decl->getSourceRange();
+    clang::SourceLocation Start = SR.getBegin();
+    clang::FullSourceLoc PStart =
+        clang::FullSourceLoc(Start, Context->getSourceManager());
+    clang::SourceLocation End = SR.getEnd();
+    clang::FullSourceLoc PEnd =
+        clang::FullSourceLoc(End, Context->getSourceManager());
+    llvm::outs() << " {Loc(" << PStart.getFileOffset() << ","
+                 << PEnd.getFileOffset() << ")} ";
     return true;
   }
 
@@ -132,31 +172,35 @@ public:
 
   virtual void HandleTranslationUnit(clang::ASTContext &Context) {
     // Visitor.TraverseDecl(Context.getTranslationUnitDecl());
-    Visitor.TraverseAST(Context);
-    llvm::outs() << "\n";
     clang::SourceManager &SM = Context.getSourceManager();
-    // Visitor.VisitTranslationUnitDecl(Context.getTranslationUnitDecl());
-    for (auto begin = SM.fileinfo_begin(); begin != SM.fileinfo_end();
-         begin++) {
-      llvm::outs() << "filename: " << begin->first->getName() << "\n";
-      llvm::outs() << "isMainFile: " << SM.isMainFile(*(begin->first)) << "\n";
-      clang::FileID FID = SM.translateFile(begin->first);
-      clang::SourceLocation StartSL = SM.getLocForStartOfFile(FID);
-      llvm::outs() << "loaction: " << StartSL.printToString(SM) << "\n";
-      clang::SourceLocation EndSL = SM.getLocForEndOfFile(FID);
-      // for (; StartSL != EndSL;) {
-      bool Invalid;
-      auto s = SM.getCharacterData(StartSL, &Invalid);
-      llvm::outs() << "default: " << s;
-      clang::SourceLocation SpellingSL = SM.getSpellingLoc(StartSL);
-      s = SM.getCharacterData(SpellingSL, &Invalid);
-      llvm::outs() << "spelling: " << s;
-      clang::SourceLocation ExpantionSL = SM.getExpansionLoc(StartSL);
-      s = SM.getCharacterData(ExpantionSL, &Invalid);
-      llvm::outs() << "expansion: " << s;
-      // StartSL = StartSL + 1;
-      // }
-    }
+    clang::FileID MainFileID = SM.getMainFileID();
+    const clang::FileEntry *FE = SM.getFileEntryForID(MainFileID);
+    llvm::outs() << "SourceFile(\"" << FE->getName() << "\", ";
+    Visitor.TraverseAST(Context);
+    llvm::outs() << ")";
+    llvm::outs() << "\n";
+    // // Visitor.VisitTranslationUnitDecl(Context.getTranslationUnitDecl());
+    // for (auto begin = SM.fileinfo_begin(); begin != SM.fileinfo_end();
+    //      begin++) {
+    //   llvm::outs() << "filename: " << begin->first->getName() << "\n";
+    //   llvm::outs() << "isMainFile: " << SM.isMainFile(*(begin->first)) <<
+    //   "\n"; clang::FileID FID = SM.translateFile(begin->first);
+    //   clang::SourceLocation StartSL = SM.getLocForStartOfFile(FID);
+    //   llvm::outs() << "loaction: " << StartSL.printToString(SM) << "\n";
+    //   clang::SourceLocation EndSL = SM.getLocForEndOfFile(FID);
+    //   // for (; StartSL != EndSL;) {
+    //   bool Invalid;
+    //   auto s = SM.getCharacterData(StartSL, &Invalid);
+    //   llvm::outs() << "default: " << s;
+    //   clang::SourceLocation SpellingSL = SM.getSpellingLoc(StartSL);
+    //   s = SM.getCharacterData(SpellingSL, &Invalid);
+    //   llvm::outs() << "spelling: " << s;
+    //   clang::SourceLocation ExpantionSL = SM.getExpansionLoc(StartSL);
+    //   s = SM.getCharacterData(ExpantionSL, &Invalid);
+    //   llvm::outs() << "expansion: " << s;
+    //   // StartSL = StartSL + 1;
+    //   // }
+    // }
   }
 
 private:
@@ -194,11 +238,21 @@ public:
         "/Users/layneliu/Projects/llvm-project/build/lib/clang/16";
     return true;
   }
+
+  bool BeginSourceFileAction(clang::CompilerInstance &CI) {
+    clang::Preprocessor &PP = CI.getPreprocessor();
+    std::unique_ptr<IncludesExtractor> IncludesExtractorCallback(
+        new IncludesExtractor(CI.getSourceManager()));
+    PP.addPPCallbacks(std::move(IncludesExtractorCallback));
+
+    return true;
+  }
 };
 
 int main(int argc, char **argv) {
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
-  //                               "int swap(int a, int b) { return 42; }");
+  // "int swap(int a, int b) { return 42; }",
+  // "casestudy.cpp");
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(), "namespace
   // n {namespace m {class C{};}}");
   clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
