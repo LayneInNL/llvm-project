@@ -1,9 +1,12 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Driver/Options.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Lex/PPCallbacks.h"
+#include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Format.h"
 
 /* TODO: extract Type Info as types in ATerms
@@ -145,6 +148,12 @@ public:
     // clang::SourceLocation ISL =
     //     Context->getSourceManager().getImmediateSpellingLoc(SL);
     // llvm::outs() << Context->getSourceManager().getCharacterData(ISL);
+    clang::DeclarationNameInfo DNI = Decl->getNameInfo();
+    clang::SourceLocation SL = DNI.getLoc();
+    clang::SourceLocation SSL = Context->getSourceManager().getSpellingLoc(SL);
+    // llvm::outs() << "###" <<
+    // Context->getSourceManager().getCharacterData(SSL)
+    //              << "###";
     return true;
   }
 
@@ -159,6 +168,9 @@ public:
         clang::FullSourceLoc(End, Context->getSourceManager());
     llvm::outs() << " {Loc(" << PStart.getFileOffset() << ","
                  << PEnd.getFileOffset() << ")} ";
+
+    // llvm::outs() << Context->getSourceManager().getCharacterData(Start);
+
     return true;
   }
 
@@ -176,9 +188,18 @@ public:
     clang::FileID MainFileID = SM.getMainFileID();
     const clang::FileEntry *FE = SM.getFileEntryForID(MainFileID);
     llvm::outs() << "SourceFile(\"" << FE->getName() << "\", ";
+
+    // Start traversing
     Visitor.TraverseAST(Context);
     llvm::outs() << ")";
     llvm::outs() << "\n";
+    // clang::FileID FD = SM.getMainFileID();
+
+    // // get main file content
+    // bool flag = false;
+    // clang::StringRef SR = SM.getBufferData(FD, &flag);
+    // llvm::outs() << SR << "\n";
+
     // // Visitor.VisitTranslationUnitDecl(Context.getTranslationUnitDecl());
     // for (auto begin = SM.fileinfo_begin(); begin != SM.fileinfo_end();
     //      begin++) {
@@ -249,12 +270,27 @@ public:
   }
 };
 
-int main(int argc, char **argv) {
+int main(int argc, const char **argv) {
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
   // "int swap(int a, int b) { return 42; }",
   // "casestudy.cpp");
   // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(), "namespace
   // n {namespace m {class C{};}}");
-  clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
-                                "#include \"swapsig.h\"\n", "swapsig.cpp");
+  // clang::tooling::runToolOnCode(std::make_unique<ATermsAction>(),
+  //                               "#include \"swapsig.h\"\n", "swapsig.cpp");
+  llvm::cl::OptionCategory OC = llvm::cl::OptionCategory("ATerms Dumper");
+  const llvm::opt::OptTable &Options = clang::driver::getDriverOptTable();
+  llvm::Expected<clang::tooling::CommonOptionsParser> ECOP =
+      clang::tooling::CommonOptionsParser::create(argc, argv, OC);
+  if (!ECOP) {
+    llvm::errs() << ECOP.takeError();
+    return 1;
+  }
+  clang::tooling::CommonOptionsParser &COP = ECOP.get();
+
+  clang::tooling::ClangTool Tool =
+      clang::tooling::ClangTool(COP.getCompilations(), COP.getSourcePathList());
+  std::unique_ptr<clang::tooling::FrontendActionFactory> FAF =
+      clang::tooling::newFrontendActionFactory<ATermsAction>();
+  Tool.run(FAF.get());
 }
