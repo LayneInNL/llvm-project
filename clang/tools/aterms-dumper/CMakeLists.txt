@@ -8,6 +8,7 @@ add_clang_tool(aterms-dumper
 
 clang_target_link_libraries(aterms-dumper
   PRIVATE
+  clangLex
   clangAST
   clangBasic
   clangFrontend
